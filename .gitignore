@@ -1,0 +1,10 @@
+# Never commit real credentials
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Docker build artifacts
+*.tar

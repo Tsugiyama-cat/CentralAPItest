@@ -1,0 +1,6 @@
+services:
+  verify:
+    build: .
+    env_file: .env
+    # Allow outbound HTTPS to GreenLake SSO and Central API
+    network_mode: bridge
