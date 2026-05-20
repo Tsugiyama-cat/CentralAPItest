@@ -87,27 +87,42 @@ def get_access_token(token_url: str, client_id: str, client_secret: str) -> str:
 
 # ── API call ───────────────────────────────────────────────────────────────────
 
-def call_api(base_url: str, token: str) -> dict:
+def call_api(base_url: str, token: str):
     """
-    Execute a lightweight GET request against Aruba New Central.
-    /platform/device_inventory/v1/devices?limit=1 is the smallest query available.
+    Try multiple lightweight GET endpoints against Aruba New Central in order.
+    Returns the first response (regardless of status code) for verdict display.
     """
-    # Normalise base URL
     base_url = base_url.rstrip("/")
-    endpoint = f"{base_url}/platform/device_inventory/v1/devices"
-    params   = {"limit": 1}
     headers  = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
 
-    info(f"Calling Central API: GET {endpoint}  params={params}")
-    try:
-        r = requests.get(endpoint, headers=headers, params=params, timeout=30)
-    except requests.exceptions.ConnectionError as exc:
-        raise RuntimeError(
-            f"Cannot reach Central API ({base_url}). "
-            "Check BASE_URL and network connectivity."
-        ) from exc
+    # Candidate endpoints — ordered from most to least likely for New Central
+    candidates = [
+        ("/network-monitoring/v1/devices",              {"limit": 1}),
+        ("/monitoring/v1/aps",                          {"limit": 1}),
+        ("/monitoring/v1/switches",                     {"limit": 1}),
+        ("/configuration/v1/groups",                    {"limit": 1}),
+        ("/platform/device_inventory/v1/devices",       {"limit": 1}),
+    ]
 
-    return r
+    last_response = None
+    for path, params in candidates:
+        endpoint = f"{base_url}{path}"
+        info(f"Trying: GET {endpoint}  params={params}")
+        try:
+            r = requests.get(endpoint, headers=headers, params=params, timeout=30)
+        except requests.exceptions.ConnectionError as exc:
+            raise RuntimeError(
+                f"Cannot reach Central API ({base_url}). "
+                "Check BASE_URL and network connectivity."
+            ) from exc
+
+        last_response = r
+        if r.status_code != 404:
+            info(f"Got HTTP {r.status_code} — using this endpoint.")
+            return r
+        warn(f"HTTP 404 on {path} — trying next endpoint …")
+
+    return last_response
 
 
 def interpret_response(r) -> None:
@@ -138,6 +153,12 @@ def interpret_response(r) -> None:
         error("           then re-run this tool to confirm.")
         error("   Note  : If credentials are also wrong you may see 403 for both reasons.")
         error(f"   Server message: {r.text[:300]}")
+
+    elif sc == 404:
+        warn("✘  HTTP 404 — all candidate endpoints returned Not Found.")
+        warn("   Cause : BASE_URL のリージョンまたはパスが異なる可能性があります。")
+        warn("   Note  : 認証は成功しているため IP制限・認証情報は問題ありません。")
+        warn(f"   Body  : {r.text[:300]}")
 
     elif sc == 429:
         warn("✘  HTTP 429 Too Many Requests — rate-limited; try again later.")
