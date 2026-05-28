@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aruba Central Streaming Monitor</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root { --accent: #38bdf8; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; }
+
+  /* ── ストリームAPI バッジ ── */
+  .badge { display:inline-block; padding:1px 8px; border-radius:9999px;
+           font-size:.7rem; font-weight:600; letter-spacing:.04em; }
+  .stream-audit    { background:#7c3aed22; color:#a78bfa; border:1px solid #7c3aed55; }
+  .stream-ap       { background:#0369a122; color:#38bdf8; border:1px solid #0369a155; }
+  .stream-location { background:#05966922; color:#34d399; border:1px solid #05966955; }
+  .stream-geo      { background:#b4530722; color:#fb923c; border:1px solid #b4530755; }
+  .stream-loca     { background:#06607422; color:#22d3ee; border:1px solid #06607455; }
+
+  /* ── Syslog バッジ ── */
+  .sl-client   { background:#05966922; color:#34d399; border:1px solid #05966966; }
+  .sl-auth-ok  { background:#16534322; color:#6ee7b7; border:1px solid #16534366; }
+  .sl-auth-ng  { background:#7f1d1d22; color:#fca5a5; border:1px solid #7f1d1d66; }
+  .sl-dhcp     { background:#06607422; color:#22d3ee; border:1px solid #06607466; }
+  .sl-ap       { background:#0369a122; color:#38bdf8; border:1px solid #0369a166; }
+  .sl-admin    { background:#4c1d9522; color:#c4b5fd; border:1px solid #4c1d9566; }
+  .sl-security { background:#7c1d1d22; color:#f87171; border:1px solid #7c1d1d66; }
+  .sl-raw      { background:#1e293b44; color:#64748b; border:1px solid #33415566; }
+
+  /* ── syslog severity 左ボーダー ── */
+  .sev-info     { border-left:3px solid #22c55e; }
+  .sev-warning  { border-left:3px solid #f59e0b; }
+  .sev-critical { border-left:3px solid #ef4444; }
+  .sev-error    { border-left:3px solid #ef4444; }
+
+  /* ── KV テーブル ── */
+  .kv-key    { color:#94a3b8; font-size:.78rem; padding-right:.5rem; vertical-align:top; white-space:nowrap; }
+  .kv-val    { color:#e2e8f0; font-size:.78rem; word-break:break-all; }
+  .n-key     { color:#64748b; font-size:.75rem; padding-right:.4rem; vertical-align:top; }
+  .n-val     { color:#cbd5e1; font-size:.75rem; }
+
+  #event-feed { overflow-y:auto; }
+  .event-card { animation: fadeIn .2s ease; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(-5px)} to{opacity:1;transform:translateY(0)} }
+
+  /* ── ステータスドット ── */
+  .status-dot  { width:8px; height:8px; border-radius:50%; display:inline-block; }
+  .dot-connected    { background:#22c55e; box-shadow:0 0 6px #22c55e; }
+  .dot-connecting   { background:#f59e0b; animation:pulse 1s infinite; }
+  .dot-reconnecting { background:#f59e0b; animation:pulse 1s infinite; }
+  .dot-stopped      { background:#64748b; }
+  .dot-error        { background:#ef4444; }
+  .dot-syslog       { background:#22c55e; box-shadow:0 0 5px #22c55e; }
+  @keyframes pulse  { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  .cb-label { display:flex; align-items:center; gap:6px; font-size:.72rem;
+              color:#94a3b8; cursor:pointer; padding:2px 0; }
+  .cb-label:hover { color:#e2e8f0; }
+  .cb-label input  { accent-color:#38bdf8; }
+
+  ::-webkit-scrollbar { width:4px; }
+  ::-webkit-scrollbar-track { background:#0f172a; }
+  ::-webkit-scrollbar-thumb { background:#334155; border-radius:2px; }
+
+  details > summary { list-style:none; cursor:pointer; }
+  details > summary::-webkit-details-marker { display:none; }
+</style>
+</head>
+
+<body class="bg-slate-950 text-slate-200 flex flex-col h-screen overflow-hidden">
+
+<!-- ── ヘッダー ──────────────────────────────────────────────── -->
+<header class="bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center gap-3 shrink-0">
+  <svg class="w-5 h-5 text-sky-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071
+             c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/>
+  </svg>
+  <h1 class="font-semibold text-sm text-slate-100 shrink-0">Aruba Central Streaming Monitor</h1>
+
+  <!-- Streaming API ステータス -->
+  <div class="flex items-center gap-2 ml-2">
+    <span id="status-dot" class="status-dot dot-stopped"></span>
+    <span id="status-text" class="text-xs text-slate-400">API:未接続</span>
+  </div>
+
+  <!-- Syslog ステータス -->
+  <div class="flex items-center gap-2 ml-3 pl-3 border-l border-slate-700">
+    <span id="sl-dot" class="status-dot dot-stopped"></span>
+    <span id="sl-text" class="text-xs text-slate-400">Syslog:0件</span>
+  </div>
+
+  <!-- カウンタ -->
+  <div class="ml-auto flex items-center gap-4 text-xs text-slate-500">
+    <span>API: <span id="count" class="text-sky-400 font-semibold">0</span></span>
+    <span>SL: <span id="sl-count" class="text-green-400 font-semibold">0</span></span>
+    <button onclick="clearFeed()"
+            class="text-slate-600 hover:text-slate-400 px-2 py-0.5 rounded border
+                   border-slate-700 hover:border-slate-500 transition-colors text-xs">
+      ✕ クリア
+    </button>
+  </div>
+</header>
+
+<!-- ── メインレイアウト ─────────────────────────────────────── -->
+<div class="flex flex-1 overflow-hidden">
+
+  <!-- ── サイドバー ──────────────────────────────────────────── -->
+  <aside class="w-64 shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col overflow-y-auto p-3 gap-3">
+
+    <!-- ═══ 認証情報 ═══ -->
+    <div class="text-xs text-slate-300 font-semibold uppercase tracking-wider
+                border-b border-slate-700 pb-1">
+      🔐 認証情報
+    </div>
+
+    <div class="space-y-2">
+      <!-- CLIENT_ID -->
+      <div>
+        <label class="text-xs text-slate-400">Client ID</label>
+        <input id="input-client-id" type="text" placeholder=".env の値を使用"
+               autocomplete="off" spellcheck="false"
+               class="mt-0.5 w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5
+                      text-xs text-slate-200 font-mono placeholder-slate-600
+                      focus:outline-none focus:border-sky-500">
+      </div>
+      <!-- CLIENT_SECRET -->
+      <div>
+        <label class="text-xs text-slate-400">Client Secret</label>
+        <div class="relative mt-0.5">
+          <input id="input-client-secret" type="password" placeholder=".env の値を使用"
+                 autocomplete="new-password" spellcheck="false"
+                 class="w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5 pr-8
+                        text-xs text-slate-200 font-mono placeholder-slate-600
+                        focus:outline-none focus:border-sky-500">
+          <button onclick="toggleSecret()" title="表示/非表示"
+                  class="absolute right-1.5 top-1/2 -translate-y-1/2
+                         text-slate-500 hover:text-slate-300 text-xs">
+            👁
+          </button>
+        </div>
+      </div>
+      <!-- 状態表示 -->
+      <div id="cred-hint" class="text-xs text-slate-600">
+        空欄のままにすると .env の設定を使用します
+      </div>
+    </div>
+
+    <!-- ═══ Streaming API セクション ═══ -->
+    <div class="text-xs text-slate-300 font-semibold uppercase tracking-wider
+                border-b border-slate-700 pb-1">
+      📡 Streaming API
+    </div>
+
+    <!-- ストリームタイプ -->
+    <div>
+      <label class="text-xs text-slate-400 font-medium">ストリームタイプ</label>
+      <select id="stream-type"
+              class="mt-1 w-full bg-slate-800 border border-slate-700 rounded px-2 py-1.5
+                     text-sm text-slate-200 focus:outline-none focus:border-sky-500">
+        <option value="audit-trail">audit-trail（監査ログ）</option>
+        <option value="ap-monitoring">ap-monitoring（AP監視）</option>
+        <option value="location">location（位置情報）</option>
+        <option value="location-analytics">location-analytics（RSSI分析）</option>
+        <option value="geofence">geofence（ジオフェンス）</option>
+      </select>
+    </div>
+
+    <!-- イベントタイプフィルター -->
+    <div>
+      <div class="flex items-center justify-between">
+        <label class="text-xs text-slate-400 font-medium">イベントタイプ</label>
+        <div class="flex gap-2">
+          <button onclick="selectAllTypes(true)"
+                  class="text-xs text-sky-500 hover:text-sky-300">全選択</button>
+          <span class="text-slate-600">|</span>
+          <button onclick="selectAllTypes(false)"
+                  class="text-xs text-sky-500 hover:text-sky-300">全解除</button>
+        </div>
+      </div>
+      <div id="event-type-list" class="mt-1.5 max-h-44 overflow-y-auto space-y-0.5 pr-1"></div>
+      <p id="no-filter-hint" class="text-xs text-slate-500 mt-1 hidden">※ フィルタなし（全イベント受信）</p>
+    </div>
+
+    <!-- Start/Stop ボタン -->
+    <div class="flex gap-2">
+      <button id="start-btn" onclick="startStream()"
+              class="flex-1 bg-sky-600 hover:bg-sky-500 active:bg-sky-700
+                     text-white text-sm font-medium py-1.5 rounded transition-colors">
+        ▶ Start
+      </button>
+      <button id="stop-btn" onclick="stopStream()" disabled
+              class="flex-1 bg-slate-700 hover:bg-slate-600 disabled:opacity-40
+                     disabled:cursor-not-allowed text-slate-200 text-sm font-medium
+                     py-1.5 rounded transition-colors">
+        ■ Stop
+      </button>
+    </div>
+
+    <!-- ステータス -->
+    <div class="border-t border-slate-800 pt-2">
+      <p class="text-xs text-slate-400 font-medium mb-1">ステータス</p>
+      <div id="status-detail" class="text-xs text-slate-500 break-all">-</div>
+      <div id="conn-url" class="text-xs text-slate-700 break-all mt-1">-</div>
+    </div>
+
+    <!-- ═══ Syslog セクション ═══ -->
+    <div class="text-xs text-slate-300 font-semibold uppercase tracking-wider
+                border-b border-slate-700 pb-1 mt-1">
+      📥 Syslog
+    </div>
+
+    <!-- 送信先情報 -->
+    <div class="bg-slate-800 rounded p-2 text-xs text-slate-400 space-y-1">
+      <div class="font-medium text-slate-300">AP のsyslog送信先:</div>
+      <div id="syslog-addr" class="font-mono text-sky-400 break-all">取得中...</div>
+      <div class="text-slate-500">UDP/TCP ポート <span id="syslog-port">514</span></div>
+      <div class="text-slate-600 text-xs mt-1">
+        AP Group → System → Syslog<br>で上記アドレスを設定
+      </div>
+    </div>
+
+    <!-- カテゴリフィルター -->
+    <div>
+      <div class="flex items-center justify-between mb-1">
+        <label class="text-xs text-slate-400 font-medium">カテゴリ表示</label>
+        <button onclick="selectAllSyslog(true)"
+                class="text-xs text-sky-500 hover:text-sky-300">全選択</button>
+      </div>
+      <div class="space-y-0.5">
+        <label class="cb-label"><input type="checkbox" class="sl-filter" value="client"   checked> 🔗 接続/切断</label>
+        <label class="cb-label"><input type="checkbox" class="sl-filter" value="auth"     checked> 🔑 認証</label>
+        <label class="cb-label"><input type="checkbox" class="sl-filter" value="dhcp"     checked> 🌐 DHCP</label>
+        <label class="cb-label"><input type="checkbox" class="sl-filter" value="ap"       checked> 📶 AP状態</label>
+        <label class="cb-label"><input type="checkbox" class="sl-filter" value="admin"    checked> 👤 管理者操作</label>
+        <label class="cb-label"><input type="checkbox" class="sl-filter" value="security" checked> 🚨 セキュリティ</label>
+        <label class="cb-label"><input type="checkbox" class="sl-filter" value="raw"            > 📄 未分類 (raw)</label>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── メイン: イベントフィード ────────────────────────────── -->
+  <main class="flex-1 flex flex-col overflow-hidden">
+    <div class="bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center gap-3 shrink-0">
+      <span class="text-xs text-slate-400 font-medium uppercase tracking-wider">イベントフィード</span>
+      <span class="text-xs text-slate-600">（最新が上）</span>
+      <!-- 表示フィルター -->
+      <div class="ml-auto flex gap-3 text-xs">
+        <label class="cb-label"><input type="checkbox" id="show-api"     checked> API</label>
+        <label class="cb-label"><input type="checkbox" id="show-syslog"  checked> Syslog</label>
+      </div>
+    </div>
+
+    <div id="event-feed" class="flex-1 overflow-y-auto p-3 space-y-2">
+      <div id="empty-hint" class="flex flex-col items-center justify-center h-full text-slate-600">
+        <svg class="w-10 h-10 mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071
+                   c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/>
+        </svg>
+        <p class="text-sm">Start を押して Streaming API を開始してください</p>
+        <p class="text-xs mt-1 opacity-60">AP のsyslogを設定するとここにリアルタイム表示されます</p>
+      </div>
+    </div>
+  </main>
+</div>
+
+
+<script>
+// ─── State ───────────────────────────────────────────────────
+let ws          = null;
+let eventCount  = 0;
+let syslogCount = 0;
+let availableTypes = {};
+
+// ─── Init ────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  await loadConfig();
+  await loadEventTypes();
+  document.getElementById('stream-type').addEventListener('change', updateEventTypeList);
+  updateEventTypeList();
+  document.getElementById('show-api').addEventListener('change', applyVisibility);
+  document.getElementById('show-syslog').addEventListener('change', applyVisibility);
+  connectWebSocket();
+});
+
+async function loadConfig() {
+  try {
+    const res = await fetch('/api/config');
+    const cfg = await res.json();
+    document.getElementById('syslog-port').textContent = cfg.syslog_port || 514;
+    document.getElementById('syslog-addr').textContent =
+      location.hostname + ':' + (cfg.syslog_port || 514);
+
+    // .env に認証情報があるか表示
+    const hint = document.getElementById('cred-hint');
+    if (cfg.has_env_credentials) {
+      hint.innerHTML =
+        '<span class="text-green-600">✓ .env に認証情報あり</span>' +
+        '<span class="text-slate-600"> — 入力欄で上書き可</span>';
+    } else {
+      hint.innerHTML =
+        '<span class="text-amber-500">⚠ .env 未設定</span>' +
+        '<span class="text-slate-600"> — 下の欄に入力してください</span>';
+    }
+  } catch(e) {
+    document.getElementById('syslog-addr').textContent = location.hostname + ':514';
+  }
+}
+
+async function loadEventTypes() {
+  try {
+    const res = await fetch('/api/event-types');
+    availableTypes = await res.json();
+  } catch(e) {
+    availableTypes = {};
+  }
+}
+
+// ─── WebSocket ────────────────────────────────────────────────
+function connectWebSocket() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws`);
+  ws.onmessage = (e) => handleMessage(JSON.parse(e.data));
+  ws.onclose   = () => {
+    setApiStatus('stopped', 'バックエンド切断 — 3秒後に再接続');
+    setTimeout(connectWebSocket, 3000);
+  };
+  ws.onerror = () => ws.close();
+}
+
+function startStream() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) { alert('WebSocket未接続'); return; }
+
+  const clientId     = document.getElementById('input-client-id').value.trim();
+  const clientSecret = document.getElementById('input-client-secret').value.trim();
+  const streamType   = document.getElementById('stream-type').value;
+  const eventTypes   = getSelectedEventTypes();
+
+  ws.send(JSON.stringify({
+    action:        'start',
+    stream_type:   streamType,
+    event_types:   eventTypes,
+    client_id:     clientId,      // 空なら .env フォールバック
+    client_secret: clientSecret,  // 空なら .env フォールバック
+  }));
+  document.getElementById('start-btn').disabled = true;
+  document.getElementById('stop-btn').disabled  = false;
+  setApiStatus('connecting', '接続中...');
+}
+
+function toggleSecret() {
+  const f = document.getElementById('input-client-secret');
+  f.type = f.type === 'password' ? 'text' : 'password';
+}
+
+function stopStream() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ action: 'stop' }));
+  document.getElementById('start-btn').disabled = false;
+  document.getElementById('stop-btn').disabled  = true;
+}
+
+// ─── Message router ──────────────────────────────────────────
+function handleMessage(msg) {
+  if (msg.type === 'status') {
+    setApiStatus(msg.status, msg.message);
+    if (msg.url) document.getElementById('conn-url').textContent = msg.url;
+    if (msg.status === 'stopped') {
+      document.getElementById('start-btn').disabled = false;
+      document.getElementById('stop-btn').disabled  = true;
+    }
+  } else if (msg.type === 'event') {
+    addApiCard(msg);
+  } else if (msg.type === 'syslog') {
+    addSyslogCard(msg);
+  } else if (msg.type === 'error') {
+    showErrorBanner(msg.message);
+  }
+}
+
+// ─── API ステータス ───────────────────────────────────────────
+function setApiStatus(status, message) {
+  const dot   = document.getElementById('status-dot');
+  const text  = document.getElementById('status-text');
+  const det   = document.getElementById('status-detail');
+  dot.className = `status-dot dot-${status}`;
+  const labels = {
+    connected:'API:接続中', connecting:'API:接続中', reconnecting:'API:再接続中',
+    stopped:'API:停止', error:'API:エラー', authenticating:'API:認証中',
+  };
+  text.textContent = labels[status] || `API:${status}`;
+  det.textContent  = message || '';
+}
+
+// ─── Streaming API イベントカード ────────────────────────────
+function addApiCard(ev) {
+  eventCount++;
+  document.getElementById('count').textContent = eventCount;
+  document.getElementById('empty-hint').style.display = 'none';
+
+  const feed = document.getElementById('event-feed');
+  const card = document.createElement('div');
+  card.className  = 'event-card bg-slate-900 border border-slate-800 rounded-lg overflow-hidden';
+  card.dataset.source = 'api';
+
+  const streamCls = getStreamClass(ev.event_type);
+  const shortType = shortEventType(ev.event_type);
+  const payLabel  = ev.payload?._label || '';
+
+  card.innerHTML = `
+    <div class="flex items-center gap-2 px-3 py-2 border-b border-slate-800 bg-slate-800/40">
+      <span class="badge ${streamCls}">${shortType}</span>
+      ${payLabel ? `<span class="text-xs text-slate-400">${payLabel}</span>` : ''}
+      <span class="ml-auto text-xs text-slate-500 font-mono">${ev.event_time || ''}</span>
+      <span class="text-xs text-slate-700 font-mono">#${ev.index}</span>
+    </div>
+    <div class="px-3 py-2">
+      <table class="w-full">${renderApiPayload(ev)}</table>
+      ${ev.subject ? `<div class="mt-1 text-xs text-slate-600">subject: ${ev.subject}</div>` : ''}
+      <div class="text-xs text-slate-700">${ev.payload_bytes||0}B${ev.event_id?` · id:${ev.event_id.slice(0,12)}…`:''}</div>
+    </div>`;
+
+  insertCard(feed, card);
+  if (!document.getElementById('show-api').checked) card.style.display = 'none';
+}
+
+function renderApiPayload(ev) {
+  const p = ev.payload || {};
+  let dbg = '';
+  if (ev._payload_src || ev._fields_found?.length) {
+    dbg = `<tr><td colspan="2" class="text-xs text-slate-700 pb-1">` +
+      [ev._payload_src ? `src:${ev._payload_src}` : '',
+       ev._fields_found?.length ? `f:[${ev._fields_found.join(',')}]` : '',
+       ev._proto_type_url ? `url:${ev._proto_type_url}` : ''
+      ].filter(Boolean).join(' · ') + `</td></tr>`;
+  }
+  if (!Object.keys(p).length) {
+    return dbg + `<tr><td colspan="2" class="text-xs text-slate-600 py-1">
+      ペイロード未デコード (${ev.payload_bytes||0}B)</td></tr>`;
+  }
+  const skip = new Set(['_label']);
+  const prio = ['occurred_on','action','category','sub_category','service_name',
+                'destination_name','description','ip_address','source',
+                'operation','timestamp','serial_number','device_name','essid',
+                'client_mac','ap_name','rssi_val','event_type','zone_id'];
+  const keys = [
+    ...prio.filter(k => k in p && !skip.has(k)),
+    ...Object.keys(p).filter(k => !prio.includes(k) && !skip.has(k)),
+  ];
+  const rows = [];
+  for (const k of keys) {
+    const v = p[k];
+    if (v === undefined || v === null || v === '' || v === 0) continue;
+    if (typeof v === 'object' && !Array.isArray(v) && !Object.keys(v).length) continue;
+    rows.push(renderKV(k, v, false));
+  }
+  return dbg + rows.join('');
+}
+
+// ─── Syslog イベントカード ────────────────────────────────────
+const _slCatFilter = () =>
+  new Set([...document.querySelectorAll('.sl-filter:checked')].map(cb => cb.value));
+
+function addSyslogCard(ev) {
+  // カテゴリフィルター
+  const allowedCats = _slCatFilter();
+  if (!allowedCats.has(ev.category)) return;
+
+  syslogCount++;
+  document.getElementById('sl-count').textContent = syslogCount;
+  document.getElementById('sl-dot').className   = 'status-dot dot-syslog';
+  document.getElementById('sl-text').textContent = `Syslog:${syslogCount}件`;
+  document.getElementById('empty-hint').style.display = 'none';
+
+  const feed = document.getElementById('event-feed');
+  const card = document.createElement('div');
+  const sevCls = `sev-${ev.severity || 'info'}`;
+  card.className  = `event-card bg-slate-900 border border-slate-800 rounded-lg overflow-hidden ${sevCls}`;
+  card.dataset.source   = 'syslog';
+  card.dataset.category = ev.category || 'raw';
+
+  const badgeCls = slBadgeClass(ev.category, ev.event_type);
+  const srcLine  = [ev.hostname, ev.src_ip !== ev.hostname ? ev.src_ip : ''].filter(Boolean).join(' · ');
+
+  // 表示フィールド
+  const fields = [];
+  if (ev.mac)         fields.push(['MAC',    ev.mac]);
+  if (ev.bssid)       fields.push(['BSSID',  ev.bssid]);
+  if (ev.ip)          fields.push(['IP',     ev.ip]);
+  if (ev.ssid)        fields.push(['SSID',   ev.ssid]);
+  if (ev.user)        fields.push(['ユーザ', ev.user]);
+  if (ev.reason_code) fields.push(['reason', ev.reason_code]);
+  if (ev.vlan)        fields.push(['VLAN',   ev.vlan]);
+
+  const fieldRows = fields.map(([k,v]) =>
+    `<tr><td class="kv-key">${k}</td><td class="kv-val">${escHtml(String(v))}</td></tr>`
+  ).join('');
+
+  const ts = ev.timestamp || ev.received_at || '';
+
+  card.innerHTML = `
+    <div class="flex items-center gap-2 px-3 py-2 border-b border-slate-800 bg-slate-800/30">
+      <span class="badge ${badgeCls}">${ev.label || 'syslog'}</span>
+      <span class="text-xs text-slate-500 truncate max-w-[120px]" title="${srcLine}">${srcLine}</span>
+      <span class="ml-auto text-xs text-slate-500 font-mono shrink-0">${ts}</span>
+    </div>
+    <div class="px-3 py-2">
+      <table class="w-full">
+        ${fieldRows}
+        <tr>
+          <td class="kv-key">メッセージ</td>
+          <td class="kv-val text-slate-500">${escHtml(ev.message || '')}</td>
+        </tr>
+      </table>
+      <div class="text-xs text-slate-700 mt-1">${ev.event_type} · ${ev.process||''}</div>
+    </div>`;
+
+  insertCard(feed, card);
+  if (!document.getElementById('show-syslog').checked) card.style.display = 'none';
+}
+
+function slBadgeClass(category, evType) {
+  if (category === 'client')   return 'sl-client';
+  if (category === 'auth')     return evType?.includes('failure') ? 'sl-auth-ng' : 'sl-auth-ok';
+  if (category === 'dhcp')     return 'sl-dhcp';
+  if (category === 'ap')       return 'sl-ap';
+  if (category === 'admin')    return 'sl-admin';
+  if (category === 'security') return 'sl-security';
+  return 'sl-raw';
+}
+
+// ─── KV レンダラ ─────────────────────────────────────────────
+function renderKV(k, v, nested) {
+  const kc = nested ? 'n-key' : 'kv-key';
+  const vc = nested ? 'n-val' : 'kv-val';
+
+  if (Array.isArray(v)) {
+    if (!v.length) return '';
+    if (typeof v[0] === 'object') {
+      const inner = v.map(item =>
+        Object.entries(item).map(([ik,iv]) => renderKV(ik,iv,true)).join('')
+      ).join(`<tr><td colspan="2" class="pb-0.5"></td></tr>`);
+      return `<tr><td class="${kc} pt-1 align-top">${k}</td>
+              <td class="${vc} pt-1"><table class="pl-2">${inner}</table></td></tr>`;
+    }
+    return `<tr><td class="${kc}">${k}</td><td class="${vc}">${v.map(escHtml).join(', ')}</td></tr>`;
+  }
+
+  if (typeof v === 'object' && v !== null) {
+    const inner = Object.entries(v).map(([ik,iv]) => renderKV(ik,iv,true)).join('');
+    return `<tr><td class="${kc} pt-1 align-top">${k}</td>
+            <td class="pt-1"><table>${inner}</table></td></tr>`;
+  }
+
+  let display = String(v);
+  if (typeof v === 'boolean') display = v ? '✓ true' : '✗ false';
+  return `<tr><td class="${kc}">${k}</td><td class="${vc}">${escHtml(display)}</td></tr>`;
+}
+
+// ─── イベントタイプリスト ─────────────────────────────────────
+function updateEventTypeList() {
+  const streamType = document.getElementById('stream-type').value;
+  const list  = document.getElementById('event-type-list');
+  const hint  = document.getElementById('no-filter-hint');
+  const types = availableTypes[streamType] || [];
+
+  list.innerHTML = '';
+  if (!types.length) { hint.classList.remove('hidden'); return; }
+  hint.classList.add('hidden');
+
+  types.forEach(t => {
+    const short = t.split('.').slice(-1)[0].replace(/_/g, '-');
+    const lbl   = document.createElement('label');
+    lbl.className = 'cb-label';
+    lbl.innerHTML = `<input type="checkbox" value="${t}" checked> ${short}`;
+    list.appendChild(lbl);
+  });
+}
+
+function getSelectedEventTypes() {
+  return [...document.querySelectorAll('#event-type-list input:checked')].map(i => i.value);
+}
+
+function selectAllTypes(checked) {
+  document.querySelectorAll('#event-type-list input[type=checkbox]')
+    .forEach(cb => cb.checked = checked);
+}
+
+function selectAllSyslog(checked) {
+  document.querySelectorAll('.sl-filter').forEach(cb => cb.checked = checked);
+}
+
+// ─── 表示 / 非表示フィルター ─────────────────────────────────
+function applyVisibility() {
+  const showApi = document.getElementById('show-api').checked;
+  const showSl  = document.getElementById('show-syslog').checked;
+  document.querySelectorAll('[data-source="api"]').forEach(
+    c => c.style.display = showApi ? '' : 'none'
+  );
+  document.querySelectorAll('[data-source="syslog"]').forEach(
+    c => c.style.display = showSl ? '' : 'none'
+  );
+}
+
+// ─── ユーティリティ ──────────────────────────────────────────
+function insertCard(feed, card) {
+  const second = feed.children[1] || null;
+  feed.insertBefore(card, second);
+  // 上限 500 件
+  while (feed.children.length > 502) {
+    const last = feed.lastElementChild;
+    if (last && last.id !== 'empty-hint') last.remove();
+    else break;
+  }
+}
+
+function shortEventType(t) {
+  if (!t) return 'unknown';
+  const parts = t.split('.');
+  if (parts.length >= 2) {
+    const last2 = parts.slice(-2).join('.');
+    return last2.length < 30 ? last2 : parts[parts.length-1];
+  }
+  return t;
+}
+
+function getStreamClass(t) {
+  if (!t) return 'stream-audit';
+  if (t.includes('audit-trail'))        return 'stream-audit';
+  if (t.includes('network-monitoring')) return 'stream-ap';
+  if (t.includes('location-analytics')) return 'stream-loca';
+  if (t.includes('geofence'))           return 'stream-geo';
+  if (t.includes('location'))           return 'stream-location';
+  return 'stream-audit';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function clearFeed() {
+  const feed = document.getElementById('event-feed');
+  [...feed.children].forEach(c => { if (c.id !== 'empty-hint') c.remove(); });
+  eventCount = 0; syslogCount = 0;
+  document.getElementById('count').textContent    = '0';
+  document.getElementById('sl-count').textContent = '0';
+  document.getElementById('empty-hint').style.display = '';
+}
+
+function showErrorBanner(msg) {
+  const feed = document.getElementById('event-feed');
+  const el   = document.createElement('div');
+  el.className = 'event-card bg-red-950 border border-red-800 rounded px-3 py-2 text-xs text-red-300';
+  el.dataset.source = 'api';
+  el.textContent = `⚠ ${msg}`;
+  insertCard(feed, el);
+  document.getElementById('empty-hint').style.display = 'none';
+}
+</script>
+</body>
+</html>

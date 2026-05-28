@@ -1,6 +1,30 @@
 services:
+
+  # ── Web モニター（常時起動） ────────────────────────────────
+  # アクセス: http://<このPCのIP>:8888
+  web:
+    build: .
+    env_file: .env
+    ports:
+      - "${WEB_PORT:-9999}:8080"        # Web UI
+      - "${SYSLOG_PORT:-514}:514/udp"   # Syslog UDP
+      - "${SYSLOG_PORT:-514}:514/tcp"   # Syslog TCP
+    command: uvicorn web_stream:app --host 0.0.0.0 --port 8080
+    restart: unless-stopped
+
+  # ── REST API 疎通確認（手動実行用） ────────────────────────
+  # 実行: docker compose run --rm verify
   verify:
     build: .
     env_file: .env
-    # Allow outbound HTTPS to GreenLake SSO and Central API
     network_mode: bridge
+    profiles: ["tools"]
+
+  # ── CLI ストリーミングテスト（手動実行用） ──────────────────
+  # 実行: docker compose run --rm stream
+  stream:
+    build: .
+    env_file: .env
+    network_mode: bridge
+    command: python stream_test.py
+    profiles: ["tools"]

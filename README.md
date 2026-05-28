@@ -1,8 +1,207 @@
-# Aruba New Central — IP Restriction Verification Tool
+# Aruba Central Streaming Monitor
 
-HPE GreenLake プラットフォームの **IPアドレス制限（allowlist）** が  
-Aruba New Central REST API に対して正しく機能しているかを検証するための、  
-Docker ベースの軽量ツールです。
+Aruba New Central の **Streaming API** と **AP Syslog** をブラウザでリアルタイム監視するツールです。  
+Docker Compose で動作するため、**Docker が使える任意の PC** で同じ手順で起動できます。
+
+---
+
+## 機能
+
+| 機能 | 説明 |
+|---|---|
+| 📡 Streaming API | 監査ログ・AP監視・位置情報・ジオフェンスをリアルタイム表示 |
+| 📥 AP Syslog 受信 | UDP/TCP 514 で AP の syslog を受信・解析・表示 |
+| 🔍 イベント分類 | 接続/切断・認証・DHCP・AP状態・セキュリティを自動分類 |
+| 🌐 ブラウザ UI | どの PC からもアクセス可能な Web インターフェース |
+
+---
+
+## 取得できるログ
+
+### Streaming API 経由
+- 設定変更・操作ログ（audit-trail 全カテゴリ）
+- 認証・ログインログ（`gcis`, `system-management`）
+- AP 状態変化・統計（ap-monitoring）
+- セキュリティイベント、ジオフェンス等
+
+### AP Syslog 経由
+- **クライアントの SSID 接続・切断**（assoc / disassoc）
+- 認証成功・失敗（EAP / PSK）
+- DHCP IP アドレス割当
+- AP 起動・停止・再起動
+- 管理者ログイン・設定変更
+- 不正 AP・IDS 検知
+
+---
+
+## セットアップ
+
+### 必要なもの
+
+- Docker Desktop（Windows/Mac）または Docker Engine（Linux）
+- Aruba Central の API クライアント認証情報（GreenLake Workspace で取得）
+
+### 手順
+
+```bash
+# 1. .env ファイルを作成
+cp .env.example .env
+
+# 2. .env を編集して認証情報を入力（後述）
+nano .env   # または任意のエディタで編集
+
+# 3. Docker イメージをビルドして起動
+docker compose build
+docker compose up -d web
+
+# 4. ブラウザでアクセス
+# http://<このPCのIPアドレス>:8888
+```
+
+### .env の設定項目
+
+```env
+CLIENT_ID=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx    # GreenLake API クライアントID
+CLIENT_SECRET=your-secret-here                     # クライアントシークレット
+BASE_URL=https://jp1.api.central.arubanetworks.com # リージョン別URL
+TOKEN_URL=https://sso.common.cloud.hpe.com/as/token.oauth2  # 通常変更不要
+```
+
+**BASE_URL のリージョン別一覧:**
+
+| リージョン | URL |
+|---|---|
+| 日本 (APAC-1) | `https://jp1.api.central.arubanetworks.com` |
+| US (East) | `https://apigw-prod2.central.arubanetworks.com` |
+| US (West) | `https://apigw-us-west-4.central.arubanetworks.com` |
+| EU | `https://eu-apigw.central.arubanetworks.com` |
+
+---
+
+## AP Syslog の設定方法
+
+Aruba Central の管理画面で AP の syslog 送信先をこのツールの PC に向けます。
+
+1. **Aruba Central** → **Configuration** → **AP Groups** → 対象グループ
+2. **System** タブ → **Syslog** セクション
+3. 以下を設定：
+
+| 設定項目 | 値 |
+|---|---|
+| Syslog Server | このツールの PC の IP アドレス |
+| Port | 514（変更した場合はそのポート番号） |
+| Protocol | UDP |
+| Log Level | Informational 以上 |
+
+4. **Save** → **Push Config** で AP に適用
+
+---
+
+## コマンドリファレンス
+
+```bash
+# Web モニター起動（常時稼働）
+docker compose up -d web
+
+# ログ確認
+docker compose logs -f web
+
+# 停止
+docker compose down
+
+# 再ビルド（ファイル変更後）
+docker compose build && docker compose up -d web
+
+# REST API 疎通確認（IP制限チェック）
+docker compose run --rm verify
+
+# CLI ストリーミングテスト
+docker compose run --rm stream
+```
+
+---
+
+## ポート変更方法
+
+`.env` に追記するだけで変更できます：
+
+```env
+WEB_PORT=9999      # Web UI を 9999 番に変更
+SYSLOG_PORT=5514   # syslog を 5514 番に変更（514 が使用中の場合）
+```
+
+AP の syslog 送信先ポートも同じ番号に合わせてください。
+
+---
+
+## Linux でポート 514 が使えない場合
+
+Linux ホストでは `rsyslog` が 514 番を使用している場合があります：
+
+```bash
+# rsyslog が 514 を使っているか確認
+sudo ss -ulnp | grep 514
+
+# 使っている場合は .env で別ポートを指定
+echo "SYSLOG_PORT=5514" >> .env
+docker compose up -d web
+
+# ファイアウォール開放（UFW の場合）
+sudo ufw allow 5514/udp
+sudo ufw allow 5514/tcp
+```
+
+---
+
+## ファイル構成
+
+```
+.
+├── docker-compose.yml   # Docker Compose 設定
+├── Dockerfile           # コンテナ定義
+├── web_stream.py        # FastAPI バックエンド（Streaming API + Syslog 統合）
+├── syslog_server.py     # Syslog UDP/TCP サーバ・Aruba ログ解析
+├── decoders.py          # CloudEvent Protobuf デコーダ
+├── verify_api.py        # REST API 疎通確認
+├── stream_test.py       # CLI ストリーミングテスト
+├── templates/
+│   └── index.html       # Web UI
+├── requirements.txt     # Python 依存ライブラリ
+├── .env.example         # 設定テンプレート（コピーして使用）
+├── .env                 # 実際の認証情報（Git 除外済み）
+└── README.md            # 本ドキュメント
+```
+
+---
+
+## トラブルシューティング
+
+| 症状 | 原因 | 対処 |
+|---|---|---|
+| Web UI が開かない | コンテナ起動失敗 | `docker compose logs web` でエラー確認 |
+| Syslog が届かない | ファイアウォール、ポート設定ミス | AP の送信先 IP・ポートを再確認 |
+| `HTTP 403` | IP制限でブロック | GreenLake の IP Allowlist にこの PC の IP を追加 |
+| `HTTP 401` | 認証情報が誤り | `CLIENT_ID` / `CLIENT_SECRET` を確認 |
+| `HTTP 404` | ストリームタイプ未対応 | テナントでその機能が有効か確認 |
+| ペイロード未デコード | フィールド位置の違い | イベントカードの `src:` 行でデバッグ情報を確認 |
+
+---
+
+## ⚠️ セキュリティ注意事項
+
+- `.env` には API 認証情報が含まれます。**Git にコミットしないでください**（`.gitignore` で除外済み）
+- Web UI はポート 8888 で全ネットワークに公開されます。信頼できないネットワークでは適切にアクセス制限をかけてください
+- Syslog はポート 514 で受信します。意図しないデバイスからの syslog も受信される場合があります
+
+---
+
+## IP制限確認ツール（元の機能）
+
+Aruba Central の IP Allowlist にこの PC が登録されているか確認できます：
+
+```bash
+docker compose run --rm verify
+```
 
 ---
 
