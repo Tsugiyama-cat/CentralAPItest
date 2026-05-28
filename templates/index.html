@@ -91,14 +91,11 @@
     <span id="sl-text" class="text-xs text-slate-400">Syslog:0件</span>
   </div>
 
-  <!-- カウンタ -->
-  <div class="ml-auto flex items-center gap-4 text-xs text-slate-500">
-    <span>API: <span id="count" class="text-sky-400 font-semibold">0</span></span>
-    <span>SL: <span id="sl-count" class="text-green-400 font-semibold">0</span></span>
-    <button onclick="clearFeed()"
-            class="text-slate-600 hover:text-slate-400 px-2 py-0.5 rounded border
-                   border-slate-700 hover:border-slate-500 transition-colors text-xs">
-      ✕ クリア
+  <div class="ml-auto">
+    <button onclick="clearAllFeeds()"
+            class="text-xs text-slate-600 hover:text-slate-400 px-2 py-0.5 rounded border
+                   border-slate-700 hover:border-slate-500 transition-colors">
+      ✕ 全クリア
     </button>
   </div>
 </header>
@@ -241,29 +238,63 @@
 
   </aside>
 
-  <!-- ── メイン: イベントフィード ────────────────────────────── -->
-  <main class="flex-1 flex flex-col overflow-hidden">
-    <div class="bg-slate-900 border-b border-slate-800 px-4 py-2 flex items-center gap-3 shrink-0">
-      <span class="text-xs text-slate-400 font-medium uppercase tracking-wider">イベントフィード</span>
-      <span class="text-xs text-slate-600">（最新が上）</span>
-      <!-- 表示フィルター -->
-      <div class="ml-auto flex gap-3 text-xs">
-        <label class="cb-label"><input type="checkbox" id="show-api"     checked> API</label>
-        <label class="cb-label"><input type="checkbox" id="show-syslog"  checked> Syslog</label>
+  <!-- ── メイン: 2カラム並列フィード ────────────────────────── -->
+  <main class="flex-1 flex overflow-hidden">
+
+    <!-- ── 左: Streaming API ───────────────────────────────── -->
+    <div class="flex-1 flex flex-col border-r border-slate-800 min-w-0">
+      <!-- カラムヘッダー -->
+      <div class="bg-slate-900 border-b border-slate-800 px-3 py-2 flex items-center gap-2 shrink-0">
+        <span class="text-sky-400 text-xs">📡</span>
+        <span class="text-xs text-slate-300 font-medium">Streaming API</span>
+        <span class="text-xs text-slate-600">（最新が上）</span>
+        <span class="ml-auto text-xs text-slate-500">
+          <span id="count" class="text-sky-400 font-semibold">0</span> 件
+        </span>
+        <button onclick="clearApiFeed()"
+                class="text-xs text-slate-700 hover:text-slate-400 px-1.5 py-0.5 rounded
+                       border border-slate-800 hover:border-slate-600 transition-colors ml-1">✕</button>
+      </div>
+      <!-- APIイベントフィード -->
+      <div id="api-feed" class="flex-1 overflow-y-auto p-3 space-y-2">
+        <div id="api-empty" class="flex flex-col items-center justify-center h-full text-slate-700">
+          <svg class="w-8 h-8 mb-2 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                  d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071
+                     c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/>
+          </svg>
+          <p class="text-xs">Start でストリーム開始</p>
+        </div>
       </div>
     </div>
 
-    <div id="event-feed" class="flex-1 overflow-y-auto p-3 space-y-2">
-      <div id="empty-hint" class="flex flex-col items-center justify-center h-full text-slate-600">
-        <svg class="w-10 h-10 mb-3 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
-                d="M8.111 16.404a5.5 5.5 0 017.778 0M12 20h.01m-7.08-7.071
-                   c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/>
-        </svg>
-        <p class="text-sm">Start を押して Streaming API を開始してください</p>
-        <p class="text-xs mt-1 opacity-60">AP のsyslogを設定するとここにリアルタイム表示されます</p>
+    <!-- ── 右: Syslog ─────────────────────────────────────── -->
+    <div class="flex-1 flex flex-col min-w-0">
+      <!-- カラムヘッダー -->
+      <div class="bg-slate-900 border-b border-slate-800 px-3 py-2 flex items-center gap-2 shrink-0">
+        <span class="text-green-400 text-xs">📥</span>
+        <span class="text-xs text-slate-300 font-medium">Syslog</span>
+        <span class="text-xs text-slate-600">（最新が上）</span>
+        <span class="ml-auto text-xs text-slate-500">
+          <span id="sl-count" class="text-green-400 font-semibold">0</span> 件
+        </span>
+        <button onclick="clearSyslogFeed()"
+                class="text-xs text-slate-700 hover:text-slate-400 px-1.5 py-0.5 rounded
+                       border border-slate-800 hover:border-slate-600 transition-colors ml-1">✕</button>
+      </div>
+      <!-- Syslogフィード -->
+      <div id="syslog-feed" class="flex-1 overflow-y-auto p-3 space-y-2">
+        <div id="syslog-empty" class="flex flex-col items-center justify-center h-full text-slate-700">
+          <svg class="w-8 h-8 mb-2 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                  d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+          <p class="text-xs">AP の syslog 送信先を設定すると表示</p>
+          <p id="syslog-addr-hint" class="text-xs text-slate-600 mt-1 font-mono"></p>
+        </div>
       </div>
     </div>
+
   </main>
 </div>
 
@@ -274,6 +305,7 @@ let ws          = null;
 let eventCount  = 0;
 let syslogCount = 0;
 let availableTypes = {};
+const MAX_CARDS = 300;  // 各カラムの上限
 
 // ─── Init ────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', async () => {
@@ -281,8 +313,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   await loadEventTypes();
   document.getElementById('stream-type').addEventListener('change', updateEventTypeList);
   updateEventTypeList();
-  document.getElementById('show-api').addEventListener('change', applyVisibility);
-  document.getElementById('show-syslog').addEventListener('change', applyVisibility);
   connectWebSocket();
 });
 
@@ -290,9 +320,11 @@ async function loadConfig() {
   try {
     const res = await fetch('/api/config');
     const cfg = await res.json();
+    const slAddr = location.hostname + ':' + (cfg.syslog_port || 514);
     document.getElementById('syslog-port').textContent = cfg.syslog_port || 514;
-    document.getElementById('syslog-addr').textContent =
-      location.hostname + ':' + (cfg.syslog_port || 514);
+    document.getElementById('syslog-addr').textContent = slAddr;
+    const hint = document.getElementById('syslog-addr-hint');
+    if (hint) hint.textContent = slAddr;
 
     // .env に認証情報があるか表示
     const hint = document.getElementById('cred-hint');
@@ -381,6 +413,9 @@ function handleMessage(msg) {
   }
 }
 
+// ─── 初期化後にイベントリスナー削除（不要になった項目） ────────
+// applyVisibility は削除（並列表示のため不要）
+
 // ─── API ステータス ───────────────────────────────────────────
 function setApiStatus(status, message) {
   const dot   = document.getElementById('status-dot');
@@ -399,12 +434,12 @@ function setApiStatus(status, message) {
 function addApiCard(ev) {
   eventCount++;
   document.getElementById('count').textContent = eventCount;
-  document.getElementById('empty-hint').style.display = 'none';
 
-  const feed = document.getElementById('event-feed');
+  const feed = document.getElementById('api-feed');
+  document.getElementById('api-empty').style.display = 'none';
+
   const card = document.createElement('div');
-  card.className  = 'event-card bg-slate-900 border border-slate-800 rounded-lg overflow-hidden';
-  card.dataset.source = 'api';
+  card.className = 'event-card bg-slate-900 border border-slate-800 rounded-lg overflow-hidden';
 
   const streamCls = getStreamClass(ev.event_type);
   const shortType = shortEventType(ev.event_type);
@@ -424,7 +459,6 @@ function addApiCard(ev) {
     </div>`;
 
   insertCard(feed, card);
-  if (!document.getElementById('show-api').checked) card.style.display = 'none';
 }
 
 function renderApiPayload(ev) {
@@ -466,26 +500,25 @@ const _slCatFilter = () =>
 
 function addSyslogCard(ev) {
   // カテゴリフィルター
-  const allowedCats = _slCatFilter();
-  if (!allowedCats.has(ev.category)) return;
+  if (!_slCatFilter().has(ev.category)) return;
 
   syslogCount++;
-  document.getElementById('sl-count').textContent = syslogCount;
-  document.getElementById('sl-dot').className   = 'status-dot dot-syslog';
-  document.getElementById('sl-text').textContent = `Syslog:${syslogCount}件`;
-  document.getElementById('empty-hint').style.display = 'none';
+  document.getElementById('sl-count').textContent  = syslogCount;
+  document.getElementById('sl-dot').className      = 'status-dot dot-syslog';
+  document.getElementById('sl-text').textContent   = `Syslog:${syslogCount}件`;
 
-  const feed = document.getElementById('event-feed');
-  const card = document.createElement('div');
-  const sevCls = `sev-${ev.severity || 'info'}`;
-  card.className  = `event-card bg-slate-900 border border-slate-800 rounded-lg overflow-hidden ${sevCls}`;
-  card.dataset.source   = 'syslog';
+  const feed = document.getElementById('syslog-feed');
+  document.getElementById('syslog-empty').style.display = 'none';
+
+  const card    = document.createElement('div');
+  const sevCls  = `sev-${ev.severity || 'info'}`;
+  card.className = `event-card bg-slate-900 border border-slate-800 rounded-lg overflow-hidden ${sevCls}`;
   card.dataset.category = ev.category || 'raw';
 
   const badgeCls = slBadgeClass(ev.category, ev.event_type);
   const srcLine  = [ev.hostname, ev.src_ip !== ev.hostname ? ev.src_ip : ''].filter(Boolean).join(' · ');
+  const ts       = ev.timestamp || ev.received_at || '';
 
-  // 表示フィールド
   const fields = [];
   if (ev.mac)         fields.push(['MAC',    ev.mac]);
   if (ev.bssid)       fields.push(['BSSID',  ev.bssid]);
@@ -499,27 +532,24 @@ function addSyslogCard(ev) {
     `<tr><td class="kv-key">${k}</td><td class="kv-val">${escHtml(String(v))}</td></tr>`
   ).join('');
 
-  const ts = ev.timestamp || ev.received_at || '';
-
   card.innerHTML = `
     <div class="flex items-center gap-2 px-3 py-2 border-b border-slate-800 bg-slate-800/30">
       <span class="badge ${badgeCls}">${ev.label || 'syslog'}</span>
-      <span class="text-xs text-slate-500 truncate max-w-[120px]" title="${srcLine}">${srcLine}</span>
+      <span class="text-xs text-slate-500 truncate max-w-[110px]" title="${srcLine}">${srcLine}</span>
       <span class="ml-auto text-xs text-slate-500 font-mono shrink-0">${ts}</span>
     </div>
     <div class="px-3 py-2">
       <table class="w-full">
         ${fieldRows}
         <tr>
-          <td class="kv-key">メッセージ</td>
+          <td class="kv-key">msg</td>
           <td class="kv-val text-slate-500">${escHtml(ev.message || '')}</td>
         </tr>
       </table>
-      <div class="text-xs text-slate-700 mt-1">${ev.event_type} · ${ev.process||''}</div>
+      <div class="text-xs text-slate-700 mt-1">${ev.event_type}${ev.process ? ' · '+ev.process : ''}</div>
     </div>`;
 
   insertCard(feed, card);
-  if (!document.getElementById('show-syslog').checked) card.style.display = 'none';
 }
 
 function slBadgeClass(category, evType) {
@@ -593,26 +623,15 @@ function selectAllSyslog(checked) {
   document.querySelectorAll('.sl-filter').forEach(cb => cb.checked = checked);
 }
 
-// ─── 表示 / 非表示フィルター ─────────────────────────────────
-function applyVisibility() {
-  const showApi = document.getElementById('show-api').checked;
-  const showSl  = document.getElementById('show-syslog').checked;
-  document.querySelectorAll('[data-source="api"]').forEach(
-    c => c.style.display = showApi ? '' : 'none'
-  );
-  document.querySelectorAll('[data-source="syslog"]').forEach(
-    c => c.style.display = showSl ? '' : 'none'
-  );
-}
-
 // ─── ユーティリティ ──────────────────────────────────────────
 function insertCard(feed, card) {
-  const second = feed.children[1] || null;
-  feed.insertBefore(card, second);
-  // 上限 500 件
-  while (feed.children.length > 502) {
+  // 空ステート要素（id="*-empty"）の次に挿入
+  const anchor = feed.children[1] || null;
+  feed.insertBefore(card, anchor);
+  // 上限 MAX_CARDS 件（空ステートの分 +1）
+  while (feed.children.length > MAX_CARDS + 1) {
     const last = feed.lastElementChild;
-    if (last && last.id !== 'empty-hint') last.remove();
+    if (last && !last.id.endsWith('-empty')) last.remove();
     else break;
   }
 }
@@ -641,23 +660,34 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-function clearFeed() {
-  const feed = document.getElementById('event-feed');
-  [...feed.children].forEach(c => { if (c.id !== 'empty-hint') c.remove(); });
-  eventCount = 0; syslogCount = 0;
-  document.getElementById('count').textContent    = '0';
+function clearApiFeed() {
+  const feed = document.getElementById('api-feed');
+  [...feed.children].forEach(c => { if (c.id !== 'api-empty') c.remove(); });
+  eventCount = 0;
+  document.getElementById('count').textContent = '0';
+  document.getElementById('api-empty').style.display = '';
+}
+
+function clearSyslogFeed() {
+  const feed = document.getElementById('syslog-feed');
+  [...feed.children].forEach(c => { if (c.id !== 'syslog-empty') c.remove(); });
+  syslogCount = 0;
   document.getElementById('sl-count').textContent = '0';
-  document.getElementById('empty-hint').style.display = '';
+  document.getElementById('syslog-empty').style.display = '';
+}
+
+function clearAllFeeds() {
+  clearApiFeed();
+  clearSyslogFeed();
 }
 
 function showErrorBanner(msg) {
-  const feed = document.getElementById('event-feed');
+  const feed = document.getElementById('api-feed');
   const el   = document.createElement('div');
   el.className = 'event-card bg-red-950 border border-red-800 rounded px-3 py-2 text-xs text-red-300';
-  el.dataset.source = 'api';
   el.textContent = `⚠ ${msg}`;
   insertCard(feed, el);
-  document.getElementById('empty-hint').style.display = 'none';
+  document.getElementById('api-empty').style.display = 'none';
 }
 </script>
 </body>
